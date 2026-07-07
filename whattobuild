@@ -1,0 +1,390 @@
+PART 1
+PRIVATE ZERO-KNOWLEDGE VAULT
+Software Requirements Specification (SRS)
+Version 1.0
+SECTION 1 — PROJECT OVERVIEW
+Objective
+
+Build a production-grade private encrypted vault intended exclusively for two predefined users to securely store, organize, and access highly sensitive personal images.
+
+This application is not a social platform, not a cloud gallery, and not a general file-sharing service.
+
+Its primary objective is maximum privacy, confidentiality, integrity, and long-term security.
+
+The system shall prioritize security over convenience in every architectural and implementation decision.
+
+The application must be built as though it will be exposed to the public Internet and must assume that attackers will continuously attempt unauthorized access.
+
+The application must follow a Zero-Knowledge security model wherever technically feasible.
+
+The server must never have the ability to decrypt users' stored images.
+
+SECTION 2 — CORE DESIGN PRINCIPLES
+
+The implementation shall follow these principles without exception.
+
+Privacy First
+
+Every design decision must prioritize user privacy above convenience.
+
+Zero Knowledge
+
+The server must never possess encryption keys.
+
+Images shall be encrypted inside the browser before upload.
+
+Decryption shall happen only inside the browser after successful authentication.
+
+The server stores only encrypted binary data.
+
+Least Privilege
+
+Every component shall receive only the permissions absolutely necessary.
+
+No service, route, or API should have unnecessary privileges.
+
+Defense in Depth
+
+Assume individual security layers may eventually fail.
+
+Multiple independent security mechanisms shall protect every sensitive resource.
+
+Authentication alone is never considered sufficient.
+
+Authorization must be verified on every protected request.
+
+Secure by Default
+
+Every feature shall default to the safest configuration.
+
+Public access shall never be enabled by default.
+
+Sharing shall never be enabled.
+
+Directory browsing shall never be possible.
+
+Fail Secure
+
+Whenever unexpected behavior occurs, the application shall deny access rather than allow it.
+
+SECTION 3 — PROJECT SCOPE
+
+The project is intentionally minimal.
+
+Only two users will ever exist.
+
+No registration.
+
+No invitations.
+
+No public accounts.
+
+No email verification.
+
+No social login.
+
+No Google login.
+
+No Microsoft login.
+
+No Facebook login.
+
+No guest mode.
+
+No anonymous users.
+
+No password reset through email.
+
+Only manually created accounts stored inside the database.
+
+SECTION 4 — THREAT MODEL
+
+The application shall assume the following attack scenarios.
+
+External attacker
+
+Attempts to:
+
+Guess passwords
+Enumerate users
+Scan endpoints
+Discover hidden routes
+Access uploaded images directly
+Exploit API endpoints
+Brute force login
+Exploit SQL Injection
+Exploit XSS
+Exploit CSRF
+Exploit SSRF
+Upload malicious files
+Stolen URL
+
+An attacker obtains an image URL.
+
+Expected result:
+
+The URL must be completely useless.
+
+Without an authenticated session, the server must always respond:
+
+401 Unauthorized
+
+or
+
+403 Forbidden
+
+Never return image data.
+
+Database Leak
+
+Assume the database becomes public.
+
+Expected result:
+
+Passwords remain securely hashed.
+
+Sensitive metadata remains encrypted.
+
+Images remain encrypted.
+
+No attacker can recover original images.
+
+Storage Leak
+
+Assume cloud storage becomes public.
+
+Expected result:
+
+Only encrypted files are exposed.
+
+No plaintext image can be recovered.
+
+Server Compromise
+
+Assume an attacker gains read access to the server.
+
+Expected result:
+
+The attacker cannot decrypt stored images because encryption keys never exist on the server.
+
+Session Hijacking
+
+Assume session cookies are stolen.
+
+Mitigation:
+
+Short session lifetime.
+
+Secure HTTP-only cookies.
+
+SameSite Strict.
+
+Automatic session invalidation.
+
+Device management.
+
+SECTION 5 — SECURITY GOALS
+
+The application must satisfy all of the following.
+
+✓ Images never publicly accessible
+
+✓ No public folders
+
+✓ No public URLs
+
+✓ No direct downloads
+
+✓ No permanent links
+
+✓ No searchable filenames
+
+✓ No sequential IDs
+
+✓ No predictable routes
+
+✓ Client-side encryption
+
+✓ Strong password hashing
+
+✓ Constant-time password comparison
+
+✓ Secure session cookies
+
+✓ Strict Content Security Policy
+
+✓ HTTPS only
+
+✓ Rate limiting
+
+✓ Authorization on every request
+
+✓ Secure headers
+
+✓ Minimal attack surface
+
+SECTION 6 — USER EXPERIENCE
+
+The interface should be extremely minimal.
+
+No unnecessary animations.
+
+No advertisements.
+
+No notifications except security events.
+
+Professional appearance.
+
+Dark mode.
+
+Fast loading.
+
+Responsive.
+
+Keyboard accessible.
+
+SECTION 7 — USER FLOW
+
+User opens website
+
+↓
+
+Password login
+
+↓
+
+Session created
+
+↓
+
+Vault dashboard
+
+↓
+
+Encrypted image list
+
+↓
+
+User selects image
+
+↓
+
+Browser requests encrypted blob
+
+↓
+
+Server validates authorization
+
+↓
+
+Encrypted data returned
+
+↓
+
+Browser decrypts locally
+
+↓
+
+Image displayed
+
+SECTION 8 — IMAGE SECURITY
+
+Images shall NEVER be accessible by
+
+/uploads/photo.jpg
+
+Never.
+
+Instead:
+
+Browser
+
+↓
+
+API Request
+
+↓
+
+Authorization Check
+
+↓
+
+Encrypted Blob
+
+↓
+
+Browser Decrypts
+
+↓
+
+Display
+
+No direct file access.
+
+No public storage.
+
+No CDN exposure.
+
+No image indexing.
+
+No link previews.
+
+No OpenGraph previews.
+
+No metadata leakage.
+
+SECTION 9 — PASSWORD POLICY
+
+Require:
+
+Minimum 18 characters
+
+Uppercase
+
+Lowercase
+
+Numbers
+
+Symbols
+
+Password stored using Argon2id.
+
+Never SHA256.
+
+Never MD5.
+
+Never reversible encryption.
+
+Never plaintext.
+
+SECTION 10 — DEVELOPMENT RULES FOR AI
+
+The AI must never optimize for speed.
+
+It must optimize for:
+
+Security
+
+Maintainability
+
+Scalability
+
+Readability
+
+Code quality
+
+Architecture
+
+Professional engineering standards.
+
+Never generate insecure shortcuts.
+
+Never expose secrets.
+
+Never expose encryption keys.
+
+Never disable security to simplify implementation.
+
+Always choose the most secure implementation even if it requires more code.
+
+
