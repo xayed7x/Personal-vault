@@ -53,7 +53,7 @@ export async function GET(
     const fileBuffer = results[0].encryptedFile;
 
     // Return the encrypted file binary stream with strict anti-caching headers
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(new Uint8Array(fileBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/octet-stream',
