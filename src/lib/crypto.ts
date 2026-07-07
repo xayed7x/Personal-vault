@@ -6,7 +6,7 @@ import crypto from 'crypto';
  */
 export async function hashAuthHash(authHash: string): Promise<string> {
   return hash(authHash, {
-    algorithm: Algorithm.Argon2id,
+    algorithm: 2 as any,
     memoryCost: 65536, // 64 MB
     timeCost: 3,       // 3 iterations
     parallelism: 4,

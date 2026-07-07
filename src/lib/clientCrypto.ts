@@ -44,7 +44,7 @@ export async function deriveClientKeys(
   const derivedBits = await window.crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: saltBytes,
+      salt: saltBytes as any,
       iterations: 600000,
       hash: 'SHA-256',
     },
@@ -84,9 +84,9 @@ export async function decryptVaultKey(
   const iv = hexToUint8Array(ivHex);
 
   const decryptedBytes = await window.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     masterKey,
-    ciphertext
+    ciphertext as any
   );
 
   return window.crypto.subtle.importKey(
@@ -110,9 +110,9 @@ export async function encryptMetadata(
   const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV
 
   const encryptedBytes = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     vaultKey,
-    plaintextBytes
+    plaintextBytes as any
   );
 
   return {
@@ -133,9 +133,9 @@ export async function decryptMetadata(
   const iv = hexToUint8Array(ivHex);
 
   const decryptedBytes = await window.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     vaultKey,
-    ciphertext
+    ciphertext as any
   );
 
   const decoder = new TextDecoder();
@@ -153,7 +153,7 @@ export async function encryptFile(
   const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV
 
   const encryptedBytes = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     vaultKey,
     arrayBuffer
   );
@@ -176,7 +176,7 @@ export async function decryptFile(
   const iv = hexToUint8Array(ivHex);
 
   const decryptedBytes = await window.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     vaultKey,
     encryptedArrayBuffer
   );

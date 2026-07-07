@@ -85,7 +85,7 @@ export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
         
         // Pack the 12-byte IV at the beginning of the file blob
         const ivBytes = hexToUint8Array(encryptedFileData.ivHex);
-        const combinedBlob = new Blob([ivBytes, encryptedFileData.encryptedBlob], { type: 'application/octet-stream' });
+        const combinedBlob = new Blob([ivBytes as any, encryptedFileData.encryptedBlob], { type: 'application/octet-stream' });
 
         // 3. Assemble multipart payload
         const formData = new FormData();
