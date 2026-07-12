@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
         id: images.id,
         encryptedMetadata: images.encryptedMetadata,
         metadataIv: images.metadataIv,
+        category: images.category,
         uploadedBy: images.uploadedBy,
         createdAt: images.createdAt,
       })

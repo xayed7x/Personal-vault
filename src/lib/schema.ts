@@ -36,6 +36,7 @@ export const images = pgTable('images', {
   id: uuid('id').defaultRandom().primaryKey(),
   encryptedMetadata: text('encrypted_metadata').notNull(),
   metadataIv: varchar('metadata_iv', { length: 32 }).notNull(),
+  category: varchar('category', { length: 20 }).default('super_hot').notNull(),
   uploadedBy: uuid('uploaded_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

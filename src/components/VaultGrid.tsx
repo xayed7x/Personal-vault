@@ -10,13 +10,15 @@ interface EncryptedImageRecord {
   metadataIv: string;
   uploadedBy: string;
   createdAt: string;
+  category: 'normal' | 'couple' | 'hot' | 'super_hot';
 }
 
 interface VaultGridProps {
   refreshTrigger: number;
+  category: 'normal' | 'couple' | 'hot' | 'super_hot';
 }
 
-export default function VaultGrid({ refreshTrigger }: VaultGridProps) {
+export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) {
   const { vaultKey } = useAuth();
   const [records, setRecords] = useState<EncryptedImageRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,44 +53,58 @@ export default function VaultGrid({ refreshTrigger }: VaultGridProps) {
   }
 
   const openImageModal = async (record: EncryptedImageRecord) => {
-    if (!vaultKey) return;
     setActiveRecord(record);
     setModalLoading(true);
     setError(null);
 
     try {
-      // 1. Decrypt the metadata payload
-      const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
+      const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
 
-      // 2. Fetch the encrypted binary file (with prepended 12-byte IV)
-      const res = await fetch(`/api/vault/image/${record.id}`);
-      if (!res.ok) {
-        throw new Error('Failed to retrieve file binary.');
+      if (isPlaintext) {
+        const meta = JSON.parse(record.encryptedMetadata);
+        setActiveDecryptedBlob({
+          src: `/api/vault/image/${record.id}`,
+          name: meta.filename,
+          size: meta.size,
+          date: new Date(meta.uploadedAt).toLocaleString(),
+        });
+      } else {
+        if (!vaultKey) {
+          throw new Error('Vault is locked. Cannot decrypt file.');
+        }
+        // 1. Decrypt the metadata payload
+        const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
+
+        // 2. Fetch the encrypted binary file (with prepended 12-byte IV)
+        const res = await fetch(`/api/vault/image/${record.id}`);
+        if (!res.ok) {
+          throw new Error('Failed to retrieve file binary.');
+        }
+        
+        const arrayBuffer = await res.arrayBuffer();
+        if (arrayBuffer.byteLength <= 12) {
+          throw new Error('Encrypted payload is malformed.');
+        }
+
+        // 3. Extract the IV (first 12 bytes) and ciphertext bytes (remainder)
+        const ivBytes = arrayBuffer.slice(0, 12);
+        const ciphertextBytes = arrayBuffer.slice(12);
+        const ivHex = uint8ArrayToHex(new Uint8Array(ivBytes));
+
+        // 4. Decrypt the image binary
+        const decryptedBlob = await decryptFile(ciphertextBytes, ivHex, vaultKey, meta.mimeType);
+        const objectUrl = URL.createObjectURL(decryptedBlob);
+
+        setActiveDecryptedBlob({
+          src: objectUrl,
+          name: meta.filename,
+          size: meta.size,
+          date: new Date(meta.uploadedAt).toLocaleString(),
+        });
       }
-      
-      const arrayBuffer = await res.arrayBuffer();
-      if (arrayBuffer.byteLength <= 12) {
-        throw new Error('Encrypted payload is malformed.');
-      }
-
-      // 3. Extract the IV (first 12 bytes) and ciphertext bytes (remainder)
-      const ivBytes = arrayBuffer.slice(0, 12);
-      const ciphertextBytes = arrayBuffer.slice(12);
-      const ivHex = uint8ArrayToHex(new Uint8Array(ivBytes));
-
-      // 4. Decrypt the image binary
-      const decryptedBlob = await decryptFile(ciphertextBytes, ivHex, vaultKey, meta.mimeType);
-      const objectUrl = URL.createObjectURL(decryptedBlob);
-
-      setActiveDecryptedBlob({
-        src: objectUrl,
-        name: meta.filename,
-        size: meta.size,
-        date: new Date(meta.uploadedAt).toLocaleString(),
-      });
     } catch (err: any) {
-      console.error('Decryption failed:', err);
-      alert('Decryption failed: verification mismatch or corrupted block.');
+      console.error('Retrieving file details failed:', err);
+      alert(err.message || 'Retrieving file details failed.');
       closeImageModal();
     } finally {
       setModalLoading(false);
@@ -145,10 +161,48 @@ export default function VaultGrid({ refreshTrigger }: VaultGridProps) {
         .vault-grid-container {
           margin-top: 20px;
         }
+        .tabs-container {
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          margin-bottom: 30px;
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: 16px;
+        }
+        .tab-btn {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          padding: 8px 24px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          border-radius: 8px;
+          transition: var(--transition-smooth);
+        }
+        .tab-btn:hover {
+          color: white;
+          background: rgba(255, 255, 255, 0.03);
+        }
+        .tab-btn.active {
+          color: white;
+          background: rgba(255, 255, 255, 0.06);
+          box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--border-subtle);
+        }
         .grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-          gap: 20px;
+          column-count: 4;
+          column-gap: 16px;
+          width: 100%;
+        }
+        @media (max-width: 1200px) {
+          .grid { column-count: 3; }
+        }
+        @media (max-width: 768px) {
+          .grid { column-count: 2; }
+        }
+        @media (max-width: 480px) {
+          .grid { column-count: 1; }
         }
         .empty-state {
           text-align: center;
@@ -254,23 +308,29 @@ export default function VaultGrid({ refreshTrigger }: VaultGridProps) {
         }
       `}</style>
 
-      {records.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>Vault contains no files</p>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Drag and drop images above to initiate client-side encryption.</p>
-        </div>
-      ) : (
-        <div className="grid">
-          {records.map((record) => (
-            <VaultImageCard
-              key={record.id}
-              record={record}
-              vaultKey={vaultKey!}
-              onClick={() => openImageModal(record)}
-            />
-          ))}
-        </div>
-      )}
+      {(() => {
+        const filteredRecords = records.filter((r) => r.category === category);
+        if (filteredRecords.length === 0) {
+          return (
+            <div className="empty-state">
+              <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No files in this category</p>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Drag and drop images to initiate uploads into this category.</p>
+            </div>
+          );
+        }
+        return (
+          <div className="grid">
+            {filteredRecords.map((record) => (
+              <VaultImageCard
+                key={record.id}
+                record={record}
+                vaultKey={vaultKey!}
+                onClick={() => openImageModal(record)}
+              />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Decryption Lightbox Modal */}
       {activeRecord && (
@@ -317,7 +377,7 @@ export default function VaultGrid({ refreshTrigger }: VaultGridProps) {
   );
 }
 
-// Subcomponent that manages lazy metadata decryption and card state
+// Subcomponent that manages metadata parsing/decryption and card state
 function VaultImageCard({
   record,
   vaultKey,
@@ -327,47 +387,63 @@ function VaultImageCard({
   vaultKey: CryptoKey;
   onClick: () => void;
 }) {
-  const [filename, setFilename] = useState<string>('Decrypting...');
+  const [filename, setFilename] = useState<string>('Loading...');
   const [error, setError] = useState(false);
+  const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
 
   useEffect(() => {
     let active = true;
-    async function decrypt() {
+    async function resolveMetadata() {
       try {
-        const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
-        if (active) {
-          setFilename(meta.filename);
+        if (isPlaintext) {
+          const meta = JSON.parse(record.encryptedMetadata);
+          if (active) {
+            setFilename(meta.filename);
+          }
+        } else {
+          if (!vaultKey) return;
+          const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
+          if (active) {
+            setFilename(meta.filename);
+          }
         }
       } catch (err) {
-        console.error('Metadata decryption error:', err);
+        console.error('Metadata parsing/decryption error:', err);
         if (active) {
           setError(true);
-          setFilename('Decryption Error');
+          setFilename('Loading Error');
         }
       }
     }
-    decrypt();
+    resolveMetadata();
     return () => {
       active = false;
     };
-  }, [record, vaultKey]);
+  }, [record, vaultKey, isPlaintext]);
 
   return (
     <div className="card glass-panel animate-fade-in" onClick={onClick}>
       <style jsx>{`
         .card {
-          padding: 16px;
+          padding: 12px;
           cursor: pointer;
           transition: var(--transition-smooth);
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
+          break-inside: avoid;
+          margin-bottom: 16px;
+          width: 100%;
+          box-sizing: border-box;
         }
         .card:hover {
           transform: translateY(-2px);
           border-color: var(--accent-primary);
           box-shadow: 0 8px 30px rgba(99, 102, 241, 0.08);
+        }
+        .card:hover .thumbnail-image {
+          transform: scale(1.03);
         }
         .thumbnail-placeholder {
           width: 100%;
@@ -381,6 +457,20 @@ function VaultImageCard({
           color: var(--text-muted);
           border: 1px solid var(--border-subtle);
           position: relative;
+        }
+        .thumbnail-image-container {
+          width: 100%;
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid var(--border-subtle);
+          background: rgba(0, 0, 0, 0.2);
+        }
+        .thumbnail-image {
+          width: 100%;
+          height: auto;
+          display: block;
+          object-fit: cover;
+          transition: transform 0.3s ease;
         }
         .lock-badge {
           position: absolute;
@@ -409,10 +499,23 @@ function VaultImageCard({
           color: var(--text-muted);
         }
       `}</style>
-      <div className="thumbnail-placeholder">
-        🖼️
-        <div className="lock-badge">AES-GCM</div>
-      </div>
+      
+      {isPlaintext ? (
+        <div className="thumbnail-image-container">
+          <img
+            src={`/api/vault/image/${record.id}`}
+            alt={filename}
+            className="thumbnail-image"
+            loading="lazy"
+          />
+        </div>
+      ) : (
+        <div className="thumbnail-placeholder">
+          🔒
+          <div className="lock-badge">AES-GCM</div>
+        </div>
+      )}
+      
       <div className="title" title={filename}>{filename}</div>
       <div className="date">{new Date(record.createdAt).toLocaleDateString()}</div>
     </div>

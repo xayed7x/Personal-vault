@@ -6,9 +6,10 @@ import { encryptFile, encryptMetadata, hexToUint8Array } from '@/lib/clientCrypt
 
 interface UploadZoneProps {
   onUploadSuccess: () => void;
+  category: 'normal' | 'couple' | 'hot' | 'super_hot';
 }
 
-export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
+export default function UploadZone({ onUploadSuccess, category }: UploadZoneProps) {
   const { vaultKey } = useAuth();
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -70,7 +71,6 @@ export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
           throw new Error(`File '${file.name}' exceeds the maximum size limit of 20MB.`);
         }
 
-        // 1. Encrypt image metadata locally in-browser
         const metadataPayload = {
           filename: file.name,
           size: file.size,
@@ -78,20 +78,33 @@ export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
           uploadedAt: new Date().toISOString(),
         };
 
-        const encryptedMeta = await encryptMetadata(metadataPayload, vaultKey);
+        let encryptedMeta;
+        let combinedBlob;
+        const isSuperHot = category === 'super_hot';
 
-        // 2. Encrypt the file binary locally in-browser
-        const encryptedFileData = await encryptFile(file, vaultKey);
-        
-        // Pack the 12-byte IV at the beginning of the file blob
-        const ivBytes = hexToUint8Array(encryptedFileData.ivHex);
-        const combinedBlob = new Blob([ivBytes as any, encryptedFileData.encryptedBlob], { type: 'application/octet-stream' });
+        if (isSuperHot) {
+          // 1. Encrypt metadata locally
+          encryptedMeta = await encryptMetadata(metadataPayload, vaultKey);
+
+          // 2. Encrypt binary locally
+          const encryptedFileData = await encryptFile(file, vaultKey);
+          const ivBytes = hexToUint8Array(encryptedFileData.ivHex);
+          combinedBlob = new Blob([ivBytes as any, encryptedFileData.encryptedBlob], { type: 'application/octet-stream' });
+        } else {
+          // Plaintext (no client-side encryption)
+          encryptedMeta = {
+            ciphertextHex: JSON.stringify(metadataPayload),
+            ivHex: 'none',
+          };
+          combinedBlob = file;
+        }
 
         // 3. Assemble multipart payload
         const formData = new FormData();
-        formData.append('file', combinedBlob, 'encrypted_blob');
+        formData.append('file', combinedBlob, isSuperHot ? 'encrypted_blob' : file.name);
         formData.append('metadata', encryptedMeta.ciphertextHex);
         formData.append('metadataIv', encryptedMeta.ivHex);
+        formData.append('category', category);
 
         // 4. Dispatch payload
         const res = await fetch('/api/vault/upload', {
@@ -121,6 +134,47 @@ export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
       <style jsx>{`
         .upload-container {
           margin-bottom: 30px;
+        }
+        .category-selector {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          margin-bottom: 20px;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid var(--border-subtle);
+          padding: 12px;
+          border-radius: 12px;
+        }
+        .selector-label {
+          font-size: 13px;
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+        .options-group {
+          display: flex;
+          gap: 8px;
+        }
+        .option-btn {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
+          padding: 8px 16px;
+          font-size: 13px;
+          font-weight: 500;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+        }
+        .option-btn:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: white;
+        }
+        .option-btn.active {
+          background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+          border-color: transparent;
+          color: white;
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
         }
         .dropzone {
           border: 2px dashed rgba(255, 255, 255, 0.08);
@@ -169,6 +223,8 @@ export default function UploadZone({ onUploadSuccess }: UploadZoneProps) {
           color: #a7f3d0;
         }
       `}</style>
+
+
 
       <div
         className={`dropzone ${dragActive ? 'active' : ''}`}

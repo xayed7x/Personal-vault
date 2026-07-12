@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File | null;
     const encryptedMetadata = formData.get('metadata') as string | null;
     const metadataIv = formData.get('metadataIv') as string | null;
+    const category = formData.get('category') as string || 'super_hot';
 
     if (!file || !encryptedMetadata || !metadataIv) {
       return NextResponse.json({ error: 'Missing required upload files or metadata.' }, { status: 400 });
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
         .values({
           encryptedMetadata,
           metadataIv,
+          category,
           uploadedBy: sessionUser.userId,
         })
         .returning({ id: images.id });

@@ -12,6 +12,7 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [currentView, setCurrentView] = useState<'landing' | 'normal' | 'couple' | 'hot' | 'super_hot'>('landing');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,6 +314,7 @@ export default function Home() {
           display: flex;
           align-items: center;
           gap: 10px;
+          cursor: pointer;
         }
         .logo-dot {
           width: 8px;
@@ -344,10 +346,124 @@ export default function Home() {
           flex-direction: column;
           gap: 30px;
         }
+        .landing-portal {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 40px;
+          margin-top: 20px;
+          margin-bottom: 40px;
+        }
+        .portal-hero {
+          text-align: center;
+          max-width: 600px;
+        }
+        .portal-hero h1 {
+          font-size: 32px;
+          font-weight: 800;
+          margin-bottom: 12px;
+          letter-spacing: -0.8px;
+          background: linear-gradient(135deg, #ffffff 0%, var(--text-secondary) 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+        .portal-hero p {
+          font-size: 15px;
+          color: var(--text-muted);
+        }
+        .gates-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 24px;
+          width: 100%;
+          max-width: 800px;
+        }
+        @media (max-width: 600px) {
+          .gates-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        .gate-card {
+          background: rgba(255, 255, 255, 0.01);
+          border: 1px solid var(--border-subtle);
+          border-radius: 16px;
+          padding: 30px 24px;
+          cursor: pointer;
+          transition: var(--transition-smooth);
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+          position: relative;
+          overflow: hidden;
+        }
+        .gate-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: radial-gradient(circle at 10% 10%, rgba(99, 102, 241, 0.03) 0%, transparent 80%);
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .gate-card:hover::before {
+          opacity: 1;
+        }
+        .gate-card:hover {
+          transform: translateY(-4px);
+          border-color: var(--accent-primary);
+          box-shadow: 0 12px 40px rgba(99, 102, 241, 0.08);
+        }
+        .gate-icon {
+          font-size: 36px;
+          margin-bottom: 8px;
+        }
+        .gate-card h3 {
+          font-size: 18px;
+          font-weight: 700;
+          color: white;
+        }
+        .gate-card p {
+          font-size: 13px;
+          color: var(--text-secondary);
+          line-height: 1.5;
+        }
+        .gate-badge {
+          font-size: 10px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-weight: 500;
+          margin-top: 8px;
+        }
+        .gate-badge.secure {
+          background: rgba(16, 185, 129, 0.08);
+          border-color: rgba(16, 185, 129, 0.2);
+          color: #34d399;
+        }
+        .view-navigation {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          margin-bottom: 10px;
+        }
+        .back-btn {
+          padding: 8px 16px;
+          font-size: 13px;
+        }
+        .view-title {
+          font-size: 20px;
+          font-weight: 700;
+          color: white;
+        }
       `}</style>
 
       <header className="header animate-fade-in">
-        <div className="logo">
+        <div className="logo" onClick={() => setCurrentView('landing')}>
           <div className="logo-dot"></div>
           <span>Zero-Knowledge Vault</span>
         </div>
@@ -361,14 +477,69 @@ export default function Home() {
       </header>
 
       <main className="dashboard-body">
-        {/* Secure Upload Section */}
-        <UploadZone onUploadSuccess={handleUploadSuccess} />
+        {currentView === 'landing' ? (
+          <>
+            <div className="landing-portal animate-fade-in">
+              <div className="portal-hero">
+                <h1>This is our personal vault</h1>
+                <p>A private, secure space for our shared photos.</p>
+              </div>
 
-        {/* Gallery Grid View */}
-        <VaultGrid refreshTrigger={refreshTrigger} />
+              <div className="gates-grid">
+                <div className="gate-card" onClick={() => setCurrentView('normal')}>
+                  <div className="gate-icon">🖼️</div>
+                  <h3>Normal Vault</h3>
+                  <p>Instant scrollable grid for regular photos</p>
+                  <span className="gate-badge">Plaintext</span>
+                </div>
 
-        {/* Authorized Active Device List */}
-        <SessionManager />
+                <div className="gate-card" onClick={() => setCurrentView('couple')}>
+                  <div className="gate-icon">👩‍❤️‍👨</div>
+                  <h3>Couple Vault</h3>
+                  <p>Our shared couple photos and moments</p>
+                  <span className="gate-badge">Plaintext</span>
+                </div>
+
+                <div className="gate-card" onClick={() => setCurrentView('hot')}>
+                  <div className="gate-icon">🔥</div>
+                  <h3>Hot Vault</h3>
+                  <p>High performance feed for hot photos</p>
+                  <span className="gate-badge">Plaintext</span>
+                </div>
+
+                <div className="gate-card" onClick={() => setCurrentView('super_hot')}>
+                  <div className="gate-icon">🔒</div>
+                  <h3>Super Hot Vault</h3>
+                  <p>Maximum security zero-knowledge encrypted vault</p>
+                  <span className="gate-badge secure">AES-GCM Secure</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Authorized Active Device List (Landing Only) */}
+            <SessionManager />
+          </>
+        ) : (
+          <div className="category-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+            <div className="view-navigation">
+              <button className="btn-secondary back-btn" onClick={() => setCurrentView('landing')}>
+                ← Back to Entrance
+              </button>
+              <div className="view-title">
+                {currentView === 'normal' && '🖼️ Normal Gallery'}
+                {currentView === 'couple' && '👩‍❤️‍👨 Couple Gallery'}
+                {currentView === 'hot' && '🔥 Hot Gallery'}
+                {currentView === 'super_hot' && '🔒 Super Hot Gallery'}
+              </div>
+            </div>
+
+            {/* Dedicated Upload Zone for this category */}
+            <UploadZone onUploadSuccess={handleUploadSuccess} category={currentView} />
+
+            {/* Dedicated Gallery for this category */}
+            <VaultGrid refreshTrigger={refreshTrigger} category={currentView} />
+          </div>
+        )}
       </main>
     </div>
   );

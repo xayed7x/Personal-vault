@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAndTouchSession } from '@/lib/session';
 import { db } from '@/lib/db';
-import { imageData } from '@/lib/schema';
+import { imageData, images } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { isRateLimited } from '@/lib/rateLimit';
 import { getClientIp } from '@/lib/session';
@@ -39,10 +39,15 @@ export async function GET(
       return NextResponse.json({ error: 'Image ID is required' }, { status: 400 });
     }
 
-    // Fetch the encrypted binary from the database
+    // Fetch the binary and category details from the database using an inner join
     const results = await db
-      .select({ encryptedFile: imageData.encryptedFile })
+      .select({
+        file: imageData.encryptedFile,
+        category: images.category,
+        metadata: images.encryptedMetadata,
+      })
       .from(imageData)
+      .innerJoin(images, eq(imageData.imageId, images.id))
       .where(eq(imageData.imageId, id))
       .limit(1);
 
@@ -50,9 +55,30 @@ export async function GET(
       return NextResponse.json({ error: 'Not Found' }, { status: 404 });
     }
 
-    const fileBuffer = results[0].encryptedFile;
+    const record = results[0];
+    const fileBuffer = record.file;
+    const isPlaintext = record.category === 'normal' || record.category === 'couple';
 
-    // Return the encrypted file binary stream with strict anti-caching headers
+    if (isPlaintext) {
+      let mimeType = 'image/jpeg';
+      try {
+        const meta = JSON.parse(record.metadata);
+        if (meta.mimeType) mimeType = meta.mimeType;
+      } catch (e) {
+        console.error('Error parsing plaintext metadata:', e);
+      }
+
+      // Return the plaintext file directly with its native MIME type and browser caching
+      return new NextResponse(new Uint8Array(fileBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Cache-Control': 'private, max-age=86400', // Cache for 1 day for local performance
+        },
+      });
+    }
+
+    // Return the encrypted file binary stream with strict anti-caching headers (Super Hot secure mode)
     return new NextResponse(new Uint8Array(fileBuffer), {
       status: 200,
       headers: {
