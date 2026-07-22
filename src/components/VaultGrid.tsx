@@ -265,7 +265,32 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
   }, [recordsWithNumbers, category, searchQuery]);
 
   if (loading) {
-    return <div className="loading-state">Accessing vault records...</div>;
+    return (
+      <div className="vault-grid-container" style={{ marginTop: '20px' }}>
+        <div className="grid">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <style jsx>{`
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            width: 100%;
+          }
+          @media (max-width: 1200px) {
+            .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          }
+          @media (max-width: 768px) {
+            .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          }
+          @media (max-width: 480px) {
+            .grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+          }
+        `}</style>
+      </div>
+    );
   }
 
   if (error) {
@@ -308,18 +333,19 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
           border: 1px solid var(--border-subtle);
         }
         .grid {
-          column-count: 4;
-          column-gap: 16px;
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 16px;
           width: 100%;
         }
         @media (max-width: 1200px) {
-          .grid { column-count: 3; }
+          .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         }
         @media (max-width: 768px) {
-          .grid { column-count: 2; }
+          .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 480px) {
-          .grid { column-count: 1; }
+          .grid { grid-template-columns: repeat(1, minmax(0, 1fr)); }
         }
         .empty-state {
           text-align: center;
@@ -644,11 +670,7 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
         </div>,
         document.body
       )}
-    </div>
-  );
-}
-
-// Subcomponent that manages metadata display and card state
+ // Subcomponent that manages metadata display and card state
 function VaultImageCard({
   record,
   vaultKey,
@@ -659,6 +681,7 @@ function VaultImageCard({
   onClick: () => void;
 }) {
   const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
     <div className="card glass-panel animate-fade-in" onClick={onClick}>
@@ -671,8 +694,6 @@ function VaultImageCard({
           flex-direction: column;
           align-items: center;
           gap: 10px;
-          break-inside: avoid;
-          margin-bottom: 16px;
           width: 100%;
           box-sizing: border-box;
         }
@@ -699,18 +720,26 @@ function VaultImageCard({
         }
         .thumbnail-image-container {
           width: 100%;
+          aspect-ratio: 16/10;
           border-radius: 8px;
           overflow: hidden;
           border: 1px solid var(--border-subtle);
-          background: rgba(0, 0, 0, 0.2);
+          background: rgba(0, 0, 0, 0.25);
           position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .thumbnail-image {
           width: 100%;
-          height: auto;
+          height: 100%;
           display: block;
           object-fit: cover;
-          transition: transform 0.3s ease;
+          transition: transform 0.3s ease, opacity 0.3s ease;
+          opacity: 0;
+        }
+        .thumbnail-image.loaded {
+          opacity: 1;
         }
         .lock-badge {
           position: absolute;
@@ -738,6 +767,21 @@ function VaultImageCard({
           z-index: 2;
           backdrop-filter: blur(4px);
         }
+        .shimmer-placeholder {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, rgba(255, 255, 255, 0.02) 25%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.02) 75%);
+          background-size: 200% 100%;
+          animation: loading-shimmer 1.5s infinite;
+          border-radius: 8px;
+        }
+        @keyframes loading-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
         .title {
           font-size: 13px;
           font-weight: 500;
@@ -757,11 +801,13 @@ function VaultImageCard({
       {isPlaintext ? (
         <div className="thumbnail-image-container">
           <div className="number-badge">Image {record.sequenceNumber}</div>
+          {!imgLoaded && <div className="shimmer-placeholder" />}
           <img
             src={`/api/vault/image/${record.id}`}
             alt={record.filename}
-            className="thumbnail-image"
+            className={`thumbnail-image ${imgLoaded ? 'loaded' : ''}`}
             loading="lazy"
+            onLoad={() => setImgLoaded(true)}
           />
         </div>
       ) : (
@@ -777,3 +823,59 @@ function VaultImageCard({
     </div>
   );
 }
+
+// Subcomponent for card skeletons while loading
+function SkeletonCard() {
+  return (
+    <div className="card skeleton-card glass-panel">
+      <style jsx>{`
+        .card {
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          box-sizing: border-box;
+          pointer-events: none;
+        }
+        .skeleton-thumb {
+          width: 100%;
+          aspect-ratio: 16/10;
+          background: linear-gradient(90deg, rgba(255, 255, 255, 0.02) 25%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.02) 75%);
+          background-size: 200% 100%;
+          animation: loading-shimmer 1.5s infinite;
+          border-radius: 8px;
+          border: 1px solid var(--border-subtle);
+        }
+        .skeleton-title {
+          width: 70%;
+          height: 14px;
+          background: rgba(255, 255, 255, 0.03);
+          border-radius: 4px;
+          margin: 4px 0;
+          animation: pulse 1.5s infinite alternate;
+        }
+        .skeleton-date {
+          width: 40%;
+          height: 10px;
+          background: rgba(255, 255, 255, 0.02);
+          border-radius: 4px;
+          animation: pulse 1.5s infinite alternate;
+        }
+        @keyframes loading-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes pulse {
+          0% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+      `}</style>
+      <div className="skeleton-thumb" />
+      <div className="skeleton-title" />
+      <div className="skeleton-date" />
+    </div>
+  );
+}
+
