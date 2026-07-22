@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
 
   const ipAddress = getClientIp(req);
 
-  // Rate limit uploads (15 uploads per minute per IP)
-  const isBlocked = await isRateLimited(ipAddress, 'vault-upload', 15, 60 * 1000);
+  // Rate limit uploads (100 uploads per minute per IP)
+  const isBlocked = await isRateLimited(ipAddress, 'vault-upload', 100, 60 * 1000);
   if (isBlocked) {
     return NextResponse.json({ error: 'Too many upload attempts. Please try again later.' }, { status: 429 });
   }

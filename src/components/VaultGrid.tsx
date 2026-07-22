@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/app/context/AuthContext';
 import { decryptMetadata, decryptFile, uint8ArrayToHex } from '@/lib/clientCrypto';
 
@@ -29,6 +30,25 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
   const [activeDecryptedBlob, setActiveDecryptedBlob] = useState<{ src: string; name: string; size: number; date: string } | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [loadingStep, setLoadingStep] = useState<string>('');
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (activeRecord) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [activeRecord]);
 
   useEffect(() => {
     fetchImages();
@@ -55,12 +75,14 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
   const openImageModal = async (record: EncryptedImageRecord) => {
     setActiveRecord(record);
     setModalLoading(true);
-    setError(null);
+    setModalError(null);
+    setLoadingStep('Initializing vault decryption keys...');
 
     try {
       const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
 
       if (isPlaintext) {
+        setLoadingStep('Loading image asset...');
         const meta = JSON.parse(record.encryptedMetadata);
         setActiveDecryptedBlob({
           src: `/api/vault/image/${record.id}`,
@@ -73,25 +95,29 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
           throw new Error('Vault is locked. Cannot decrypt file.');
         }
         // 1. Decrypt the metadata payload
+        setLoadingStep('Decrypting secure metadata payload...');
         const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
 
         // 2. Fetch the encrypted binary file (with prepended 12-byte IV)
+        setLoadingStep('Downloading encrypted secure image file...');
         const res = await fetch(`/api/vault/image/${record.id}`);
         if (!res.ok) {
-          throw new Error('Failed to retrieve file binary.');
+          throw new Error(`Failed to retrieve file binary (Status ${res.status}).`);
         }
         
         const arrayBuffer = await res.arrayBuffer();
         if (arrayBuffer.byteLength <= 12) {
-          throw new Error('Encrypted payload is malformed.');
+          throw new Error('Encrypted payload is malformed or empty.');
         }
 
         // 3. Extract the IV (first 12 bytes) and ciphertext bytes (remainder)
+        setLoadingStep('Extracting initialization vectors...');
         const ivBytes = arrayBuffer.slice(0, 12);
         const ciphertextBytes = arrayBuffer.slice(12);
         const ivHex = uint8ArrayToHex(new Uint8Array(ivBytes));
 
         // 4. Decrypt the image binary
+        setLoadingStep('Performing client-side AES-GCM decryption...');
         const decryptedBlob = await decryptFile(ciphertextBytes, ivHex, vaultKey, meta.mimeType);
         const objectUrl = URL.createObjectURL(decryptedBlob);
 
@@ -104,8 +130,7 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
       }
     } catch (err: any) {
       console.error('Retrieving file details failed:', err);
-      alert(err.message || 'Retrieving file details failed.');
-      closeImageModal();
+      setModalError(err.message || 'Retrieving file details failed.');
     } finally {
       setModalLoading(false);
     }
@@ -113,12 +138,14 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
 
   const closeImageModal = () => {
     // Explicitly release browser memory hold on image object URL
-    if (activeDecryptedBlob?.src) {
+    if (activeDecryptedBlob?.src && activeDecryptedBlob.src.startsWith('blob:')) {
       URL.revokeObjectURL(activeDecryptedBlob.src);
     }
     setActiveRecord(null);
     setActiveDecryptedBlob(null);
     setModalLoading(false);
+    setModalError(null);
+    setLoadingStep('');
   };
 
   const handleDelete = async () => {
@@ -306,6 +333,50 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
           background: rgba(255, 255, 255, 0.15);
           border-color: rgba(255, 255, 255, 0.25);
         }
+
+        /* Modal Loading and Error wrapper styles */
+        .modal-loading-wrapper, .modal-error-wrapper {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 40px 20px;
+          text-align: center;
+        }
+        .loading-step {
+          font-size: 15px;
+          font-weight: 500;
+          color: white;
+          margin-top: 8px;
+        }
+        .loading-subtext, .error-subtext {
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+        .error-icon {
+          font-size: 36px;
+          margin-bottom: 4px;
+        }
+        .error-message {
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--danger-primary);
+          max-width: 450px;
+          word-break: break-word;
+        }
+        .spinner {
+          width: 40px;
+          height: 40px;
+          border: 3px solid rgba(255, 255, 255, 0.05);
+          border-radius: 50%;
+          border-top-color: var(--accent-primary);
+          animation: spin 1s linear infinite;
+          box-shadow: 0 0 15px var(--accent-glow);
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
       `}</style>
 
       {(() => {
@@ -332,15 +403,25 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
         );
       })()}
 
-      {/* Decryption Lightbox Modal */}
-      {activeRecord && (
+      {/* Decryption Lightbox Modal (Rendered under body to bypass parent CSS transform contexts) */}
+      {mounted && activeRecord && createPortal(
         <div className="modal-overlay" onClick={closeImageModal}>
           <div className="modal-content glass-panel animate-fade-in" onClick={(e) => e.stopPropagation()}>
             <button className="close-btn" onClick={closeImageModal}>✕</button>
             
             <div className="modal-image-container">
               {modalLoading ? (
-                <div style={{ color: 'var(--text-secondary)' }}>Retrieving and decrypting payload...</div>
+                <div className="modal-loading-wrapper">
+                  <div className="spinner"></div>
+                  <div className="loading-step">{loadingStep}</div>
+                  <div className="loading-subtext">Zero-knowledge decryption takes a few moments.</div>
+                </div>
+              ) : modalError ? (
+                <div className="modal-error-wrapper">
+                  <span className="error-icon">⚠️</span>
+                  <div className="error-message">{modalError}</div>
+                  <div className="error-subtext">Please verify vault key and connection and try again.</div>
+                </div>
               ) : activeDecryptedBlob ? (
                 <img
                   src={activeDecryptedBlob.src}
@@ -348,30 +429,50 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
                   className="modal-image"
                 />
               ) : (
-                <div style={{ color: 'var(--danger-primary)' }}>Decryption validation failed.</div>
+                <div className="modal-error-wrapper">
+                  <span className="error-icon">⚠️</span>
+                  <div className="error-message">Decryption validation failed.</div>
+                </div>
               )}
             </div>
 
-            {activeDecryptedBlob && (
+            {(activeDecryptedBlob || modalError || modalLoading) && (
               <div className="modal-meta">
                 <div className="meta-details">
-                  <h3>{activeDecryptedBlob.name}</h3>
-                  <p>
-                    Size: {(activeDecryptedBlob.size / 1024 / 1024).toFixed(2)} MB &bull; Uploaded: {activeDecryptedBlob.date}
-                  </p>
+                  {activeDecryptedBlob ? (
+                    <>
+                      <h3>{activeDecryptedBlob.name}</h3>
+                      <p>
+                        Size: {(activeDecryptedBlob.size / 1024 / 1024).toFixed(2)} MB &bull; Uploaded: {activeDecryptedBlob.date}
+                      </p>
+                    </>
+                  ) : modalError ? (
+                    <>
+                      <h3 style={{ color: 'var(--danger-primary)' }}>Decryption Failed</h3>
+                      <p>An error occurred while fetching or decrypting the file.</p>
+                    </>
+                  ) : (
+                    <>
+                      <h3>Processing Security Layer...</h3>
+                      <p>{loadingStep}</p>
+                    </>
+                  )}
                 </div>
                 <div className="modal-actions">
-                  <button className="btn-danger" onClick={handleDelete} disabled={deleting}>
-                    {deleting ? 'Deleting...' : 'Delete'}
-                  </button>
-                  <button className="btn-secondary" onClick={closeImageModal}>
+                  {activeDecryptedBlob && (
+                    <button className="btn-danger" onClick={handleDelete} disabled={deleting}>
+                      {deleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  )}
+                  <button className="btn-secondary" onClick={closeImageModal} disabled={deleting}>
                     Close
                   </button>
                 </div>
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
