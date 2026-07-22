@@ -670,7 +670,11 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
         </div>,
         document.body
       )}
- // Subcomponent that manages metadata display and card state
+    </div>
+  );
+}
+
+// Subcomponent that manages metadata display and card state
 function VaultImageCard({
   record,
   vaultKey,
