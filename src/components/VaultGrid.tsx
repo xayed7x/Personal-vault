@@ -12,6 +12,11 @@ interface EncryptedImageRecord {
   uploadedBy: string;
   createdAt: string;
   category: 'normal' | 'couple' | 'hot' | 'super_hot';
+  filename: string;
+  size: number;
+  mimeType: string;
+  uploadedAt: string;
+  sequenceNumber?: number;
 }
 
 interface VaultGridProps {
@@ -33,6 +38,7 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
   const [modalError, setModalError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string>('');
 
+  const [searchQuery, setSearchQuery] = useState('');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -63,7 +69,48 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
         throw new Error('Failed to retrieve vault records.');
       }
       const data = await res.json();
-      setRecords(data);
+      
+      // Decrypt/resolve metadata for all records immediately
+      const decryptedList: EncryptedImageRecord[] = [];
+      for (const record of data) {
+        let filename = 'Unknown';
+        let size = 0;
+        let mimeType = 'image/jpeg';
+        let uploadedAt = record.createdAt;
+
+        try {
+          const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
+          if (isPlaintext) {
+            const meta = JSON.parse(record.encryptedMetadata);
+            filename = meta.filename || 'Unknown';
+            size = meta.size || 0;
+            mimeType = meta.mimeType || 'image/jpeg';
+            uploadedAt = meta.uploadedAt || record.createdAt;
+          } else {
+            if (vaultKey) {
+              const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
+              filename = meta.filename || 'Unknown';
+              size = meta.size || 0;
+              mimeType = meta.mimeType || 'image/jpeg';
+              uploadedAt = meta.uploadedAt || record.createdAt;
+            } else {
+              filename = '🔒 Encrypted';
+            }
+          }
+        } catch (e) {
+          console.error('Error resolving metadata for record:', record.id, e);
+          filename = 'Decryption Error';
+        }
+        decryptedList.push({
+          ...record,
+          filename,
+          size,
+          mimeType,
+          uploadedAt,
+        });
+      }
+
+      setRecords(decryptedList);
     } catch (err: any) {
       console.error('Error fetching images metadata:', err);
       setError(err.message || 'Error fetching vault data.');
@@ -83,22 +130,18 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
 
       if (isPlaintext) {
         setLoadingStep('Loading image asset...');
-        const meta = JSON.parse(record.encryptedMetadata);
         setActiveDecryptedBlob({
           src: `/api/vault/image/${record.id}`,
-          name: meta.filename,
-          size: meta.size,
-          date: new Date(meta.uploadedAt).toLocaleString(),
+          name: record.filename,
+          size: record.size,
+          date: new Date(record.uploadedAt).toLocaleString(),
         });
       } else {
         if (!vaultKey) {
           throw new Error('Vault is locked. Cannot decrypt file.');
         }
-        // 1. Decrypt the metadata payload
-        setLoadingStep('Decrypting secure metadata payload...');
-        const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
 
-        // 2. Fetch the encrypted binary file (with prepended 12-byte IV)
+        // 2. Fetch the encrypted secure image file (with prepended 12-byte IV)
         setLoadingStep('Downloading encrypted secure image file...');
         const res = await fetch(`/api/vault/image/${record.id}`);
         if (!res.ok) {
@@ -118,14 +161,14 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
 
         // 4. Decrypt the image binary
         setLoadingStep('Performing client-side AES-GCM decryption...');
-        const decryptedBlob = await decryptFile(ciphertextBytes, ivHex, vaultKey, meta.mimeType);
+        const decryptedBlob = await decryptFile(ciphertextBytes, ivHex, vaultKey, record.mimeType);
         const objectUrl = URL.createObjectURL(decryptedBlob);
 
         setActiveDecryptedBlob({
           src: objectUrl,
-          name: meta.filename,
-          size: meta.size,
-          date: new Date(meta.uploadedAt).toLocaleString(),
+          name: record.filename,
+          size: record.size,
+          date: new Date(record.uploadedAt).toLocaleString(),
         });
       }
     } catch (err: any) {
@@ -173,6 +216,53 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
       setDeleting(false);
     }
   };
+
+  // 1. Assign sequential numbers chronologically (oldest = 1) grouped by category
+  const recordsWithNumbers = React.useMemo(() => {
+    // Sort chronologically ascending
+    const sorted = [...records].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    
+    const categoryCounters: Record<string, number> = {};
+    
+    return sorted.map((record) => {
+      const cat = record.category;
+      if (!categoryCounters[cat]) {
+        categoryCounters[cat] = 0;
+      }
+      categoryCounters[cat] += 1;
+      
+      return {
+        ...record,
+        sequenceNumber: categoryCounters[cat],
+      };
+    });
+  }, [records]);
+
+  // 2. Filter records based on active category and search query
+  const filteredRecords = React.useMemo(() => {
+    // Get records for active category
+    let list = recordsWithNumbers.filter((r) => r.category === category);
+    
+    // Sort descending by creation date (newest first)
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    // Apply search query filtering
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      list = list.filter((r) => {
+        const nameMatches = r.filename.toLowerCase().includes(query);
+        const seqStr = String(r.sequenceNumber);
+        const numberMatches = 
+          query === seqStr || 
+          query === `image ${seqStr}` || 
+          query === `image${seqStr}`;
+        
+        return nameMatches || numberMatches;
+      });
+    }
+    
+    return list;
+  }, [recordsWithNumbers, category, searchQuery]);
 
   if (loading) {
     return <div className="loading-state">Accessing vault records...</div>;
@@ -374,14 +464,84 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
           animation: spin 1s linear infinite;
           box-shadow: 0 0 15px var(--accent-glow);
         }
+
+        /* Search Bar Styles */
+        .search-container {
+          position: relative;
+          width: 100%;
+          max-width: 500px;
+          margin: 0 auto 24px auto;
+          display: flex;
+          align-items: center;
+        }
+        .search-icon {
+          position: absolute;
+          left: 14px;
+          font-size: 14px;
+          color: var(--text-secondary);
+          pointer-events: none;
+        }
+        .search-input {
+          width: 100%;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid var(--border-subtle);
+          padding: 10px 40px 10px 38px;
+          border-radius: 10px;
+          color: white;
+          font-size: 14px;
+          outline: none;
+          transition: var(--transition-smooth);
+        }
+        .search-input:focus {
+          border-color: var(--accent-primary);
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+        }
+        .clear-search-btn {
+          position: absolute;
+          right: 12px;
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-size: 11px;
+          padding: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          transition: var(--transition-smooth);
+        }
+        .clear-search-btn:hover {
+          color: white;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
       `}</style>
 
+      {/* Search Bar */}
+      <div className="search-container">
+        <span className="search-icon">🔍</span>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search by image name or number (e.g. Image 3 or 3)..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button className="clear-search-btn" onClick={() => setSearchQuery('')} title="Clear search">
+            ✕
+          </button>
+        )}
+      </div>
+
       {(() => {
-        const filteredRecords = records.filter((r) => r.category === category);
-        if (filteredRecords.length === 0) {
+        const categoryRecords = records.filter((r) => r.category === category);
+        if (categoryRecords.length === 0) {
           return (
             <div className="empty-state">
               <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No files in this category</p>
@@ -389,6 +549,16 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
             </div>
           );
         }
+
+        if (filteredRecords.length === 0) {
+          return (
+            <div className="empty-state">
+              <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px' }}>No matching results</p>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No images found matching "{searchQuery}" in this category.</p>
+            </div>
+          );
+        }
+
         return (
           <div className="grid">
             {filteredRecords.map((record) => (
@@ -478,7 +648,7 @@ export default function VaultGrid({ refreshTrigger, category }: VaultGridProps) 
   );
 }
 
-// Subcomponent that manages metadata parsing/decryption and card state
+// Subcomponent that manages metadata display and card state
 function VaultImageCard({
   record,
   vaultKey,
@@ -488,39 +658,7 @@ function VaultImageCard({
   vaultKey: CryptoKey;
   onClick: () => void;
 }) {
-  const [filename, setFilename] = useState<string>('Loading...');
-  const [error, setError] = useState(false);
   const isPlaintext = record.category === 'normal' || record.category === 'couple' || record.category === 'hot';
-
-  useEffect(() => {
-    let active = true;
-    async function resolveMetadata() {
-      try {
-        if (isPlaintext) {
-          const meta = JSON.parse(record.encryptedMetadata);
-          if (active) {
-            setFilename(meta.filename);
-          }
-        } else {
-          if (!vaultKey) return;
-          const meta = await decryptMetadata(record.encryptedMetadata, record.metadataIv, vaultKey);
-          if (active) {
-            setFilename(meta.filename);
-          }
-        }
-      } catch (err) {
-        console.error('Metadata parsing/decryption error:', err);
-        if (active) {
-          setError(true);
-          setFilename('Loading Error');
-        }
-      }
-    }
-    resolveMetadata();
-    return () => {
-      active = false;
-    };
-  }, [record, vaultKey, isPlaintext]);
 
   return (
     <div className="card glass-panel animate-fade-in" onClick={onClick}>
@@ -565,6 +703,7 @@ function VaultImageCard({
           overflow: hidden;
           border: 1px solid var(--border-subtle);
           background: rgba(0, 0, 0, 0.2);
+          position: relative;
         }
         .thumbnail-image {
           width: 100%;
@@ -585,6 +724,20 @@ function VaultImageCard({
           color: var(--accent-primary);
           font-weight: 500;
         }
+        .number-badge {
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          font-size: 10px;
+          background: rgba(8, 8, 12, 0.85);
+          border: 1px solid var(--border-subtle);
+          padding: 2px 6px;
+          border-radius: 4px;
+          color: var(--text-primary);
+          font-weight: 600;
+          z-index: 2;
+          backdrop-filter: blur(4px);
+        }
         .title {
           font-size: 13px;
           font-weight: 500;
@@ -593,7 +746,7 @@ function VaultImageCard({
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          color: ${error ? 'var(--danger-primary)' : 'var(--text-primary)'};
+          color: var(--text-primary);
         }
         .date {
           font-size: 11px;
@@ -603,21 +756,23 @@ function VaultImageCard({
       
       {isPlaintext ? (
         <div className="thumbnail-image-container">
+          <div className="number-badge">Image {record.sequenceNumber}</div>
           <img
             src={`/api/vault/image/${record.id}`}
-            alt={filename}
+            alt={record.filename}
             className="thumbnail-image"
             loading="lazy"
           />
         </div>
       ) : (
         <div className="thumbnail-placeholder">
+          <div className="number-badge">Image {record.sequenceNumber}</div>
           🔒
           <div className="lock-badge">AES-GCM</div>
         </div>
       )}
       
-      <div className="title" title={filename}>{filename}</div>
+      <div className="title" title={record.filename}>{record.filename}</div>
       <div className="date">{new Date(record.createdAt).toLocaleDateString()}</div>
     </div>
   );
